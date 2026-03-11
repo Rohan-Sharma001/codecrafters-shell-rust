@@ -3,10 +3,11 @@ use std::{collections::HashMap, io::Read};
 use std::io::{self, Write};
 
 fn main() {
-    print!("$ ");
-    io::stdout().flush().unwrap();
+    
 
     loop {
+        print!("$ ");
+        io::stdout().flush().unwrap();
         let mut command_input = String::new();
         io::stdin().read_line(&mut command_input);
         commandParse(&command_input);
