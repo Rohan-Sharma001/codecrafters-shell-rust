@@ -1,4 +1,4 @@
-use std::{collections::{HashMap, HashSet}, env::Args, hash::Hash, io::Read, str::SplitWhitespace, vec};
+use std::{collections::{HashMap, HashSet}, env::{self, Args}, fs::metadata, hash::Hash, io::Read, os::unix::fs::PermissionsExt, path, str::SplitWhitespace, vec};
 #[allow(unused_imports)]
 use std::io::{self, Write};
 
@@ -61,6 +61,34 @@ fn echo(arg_array: Vec::<String>, commandSet: &HashSet<String>) -> Result<i32, S
     Ok(0)
 }
 
+fn path_finder(executable_name: &str) -> Result<String, bool> {
+    let val = env::var("PATH").unwrap();
+    let mut vector_of_paths = val.split(':');
+    let mut path_iterator = vector_of_paths.next();
+    loop {
+        match path_iterator {
+            Some(directory) => {
+                let file_path = format!("{}/{}", directory.to_string(),executable_name);
+                let metadata_file = metadata(&file_path);
+                match metadata_file {
+                    Ok(val) => {
+                        let perm = val.permissions().mode() & 0o111 != 0;
+                        if perm {
+                            return Ok(directory.to_string());
+                        }
+                    }
+                    Err(_) => {}
+                }
+                
+            },
+            None => break
+            
+        }
+        path_iterator = vector_of_paths.next();
+    }
+    return Err(false)
+}
+
 fn type_function(arg_array: Vec::<String>, commandSet: &HashSet<String>) -> Result<i32, String> {
     for i in 1..arg_array.len() {
         let command_to_search = arg_array.get(i);
@@ -70,16 +98,17 @@ fn type_function(arg_array: Vec::<String>, commandSet: &HashSet<String>) -> Resu
                     println!("{} is a shell builtin", command_to_search);
                     continue;
                 }
-
+                // Check if in PATH
+                match path_finder(command_to_search) {
+                    Ok(val) => {println!("{} is {}/{}", command_to_search, val, command_to_search); return Ok(0);},
+                    Err(_) => {}
+                };
 
 
                 println!("{}: not found", command_to_search);
             },
             None => {}
         }
-
-
-        
     }
 
     Ok(0)
