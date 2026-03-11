@@ -21,7 +21,7 @@ fn main() {
 }
 
 fn separator(command: &str) -> Vec<String> {
-    let vector_of_args: Vec<String> = command.split_whitespace().collect();
+    let vector_of_args: Vec<String> = command.split_whitespace().map(String::from).collect();
     return vector_of_args;
 }
 
@@ -68,6 +68,7 @@ fn type_function(arg_array: Vec::<String>, commandSet: &HashSet<String>) -> Resu
             Some(command_to_search) => {
                 if commandSet.contains(command_to_search) {
                     println!("{} is a shell builtin", command_to_search);
+                    continue;
                 }
 
 
