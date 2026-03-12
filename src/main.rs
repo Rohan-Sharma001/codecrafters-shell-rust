@@ -1,6 +1,7 @@
-use std::{collections::{HashMap, HashSet}, env::{self, Args}, fs::metadata, hash::Hash, io::Read, os::unix::fs::PermissionsExt, path, str::SplitWhitespace, vec};
+use std::{collections::{HashMap, HashSet}, env::{self, Args}, fs::metadata, hash::Hash, io::Read, os::unix::fs::PermissionsExt, path, process::Command, str::SplitWhitespace, vec};
 #[allow(unused_imports)]
 use std::io::{self, Write};
+use std::process;
 
 fn main() {
     
@@ -37,15 +38,27 @@ fn commandParse(command_input: &str) -> Result<i32, String> {
     let arguments = separator(command_input);
     let command_name = arguments.get(0);
     
-    let function_pointer = match command_name {
-        Some(command_name) => inbuilt_commands.get(command_name),
+    match command_name {
+        Some(command_name) => {
+            let function_pointer = inbuilt_commands.get(command_name);
+            if let Some(fc_ptr) = function_pointer {
+                return fc_ptr(arguments, &command_map);
+            } else {
+                let process_new = Command::new(command_name).args(arguments.iter().skip(1)).spawn();
+                if let Ok(mut new_proc) = process_new {
+                    new_proc.wait();
+                } else {
+                    println!("{}: not found", command_name);
+                }
+            }
+        },
         None => return Err("No Command".to_string())
     };
-    match function_pointer {
-        Some(function_pointer) => return (function_pointer(arguments, &command_map)),
-        None => {println!("{}: command not found", command_name.unwrap()); return Err("Command not found".to_string())}
-    };
-    
+    // match function_pointer {
+    //     Some(function_pointer) => return (function_pointer(arguments, &command_map)),
+    //     None => {println!("{}: command not found", command_name.unwrap()); return Err("Command not found".to_string())}
+    // };
+    Ok(0)
 }
 
 fn exit_program(arg_array: Vec::<String>, commandSet: &HashSet<String>) -> Result<i32, String> {
