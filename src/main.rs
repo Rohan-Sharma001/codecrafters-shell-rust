@@ -111,13 +111,16 @@ fn print_working_dir(arg_array: Vec::<String>, commandSet: &HashSet<String>) -> 
 }
 
 fn change_working_directory(arg_array: Vec::<String>, commandSet: &HashSet<String>) -> Result<i32, String> {
-    let newdir = match arg_array.get(1) {
+    let mut newdir = match arg_array.get(1) {
         Some(dir) => dir.clone(),
         None => match env::var("HOME") {
             Ok(home) => home,
             Err(_) => return Err("No directory".to_string())
         }
     };
+    if let Ok(home) = env::var("HOME") {
+        newdir.replace("~", &home);
+    }
     match env::set_current_dir(&newdir) {
         Ok(_) => return Ok(0),
         Err(_) => {println!("{}: No such file or directory", newdir); return Err("directory doesn't exist".to_string())}
