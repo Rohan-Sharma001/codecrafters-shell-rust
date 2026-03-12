@@ -119,7 +119,7 @@ fn change_working_directory(arg_array: Vec::<String>, commandSet: &HashSet<Strin
         }
     };
     if let Ok(home) = env::var("HOME") {
-        newdir.replace("~", &home);
+        newdir = newdir.replace("~", &home);
     }
     match env::set_current_dir(&newdir) {
         Ok(_) => return Ok(0),
