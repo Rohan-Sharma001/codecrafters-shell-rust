@@ -31,6 +31,8 @@ fn commandParse(command_input: &str) -> Result<i32, String> {
     inbuilt_commands.insert("exit".to_string(), exit_program);
     inbuilt_commands.insert("echo".to_string(), echo);
     inbuilt_commands.insert("type".to_string(), type_function);
+    inbuilt_commands.insert("pwd".to_string(), print_working_dir);
+
 
     let command_map: HashSet<String> = inbuilt_commands.keys().cloned().collect();
     // let mut parts = command_input.splitn(2, char::is_whitespace);
@@ -100,6 +102,11 @@ fn path_finder(executable_name: &str) -> Result<String, bool> {
         path_iterator = vector_of_paths.next();
     }
     return Err(false)
+}
+
+fn print_working_dir(arg_array: Vec::<String>, commandSet: &HashSet<String>) -> Result<i32, String> {
+    println!("{}", env::current_dir().unwrap().display());
+    Ok(1)
 }
 
 fn type_function(arg_array: Vec::<String>, commandSet: &HashSet<String>) -> Result<i32, String> {
