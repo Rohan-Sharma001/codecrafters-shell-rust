@@ -120,7 +120,7 @@ fn change_working_directory(arg_array: Vec::<String>, commandSet: &HashSet<Strin
     };
     match env::set_current_dir(&newdir) {
         Ok(_) => return Ok(0),
-        Err(_) => {println!("{}: does not exit", newdir); return Err("directory doesn't exist".to_string())}
+        Err(_) => {println!("{}: No such file or directory", newdir); return Err("directory doesn't exist".to_string())}
     }
 
 }
