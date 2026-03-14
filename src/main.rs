@@ -33,12 +33,17 @@ fn separator(command: &str) -> Vec<String> {
         while j < command.len()-1 {
             //EITHER ACTIVE SINGLE OR DOUBLE QUOTES NOT BOTH
             //NEVER INCLUDED IN FINAL ARGS
+            let mut change_of_q = false;
             if active_single_quotes {
-                if command.as_bytes()[j] == b'\'' {active_single_quotes = false; j+=1; continue;}
-            } else if command.as_bytes()[j] == b'\"' {active_double_quotes = true; j+=1; continue;}
+                if command.as_bytes()[j] == b'\'' {active_single_quotes = false; change_of_q = true;}
+            } else if command.as_bytes()[j] == b'\"' {active_double_quotes = true; change_of_q = true;}
             if active_double_quotes {
-                if command.as_bytes()[j] == b'\"' {active_double_quotes = false; j+=1; continue;}
-            } else if command.as_bytes()[j] == b'\'' {active_single_quotes = true; j+=1; continue;}
+                if command.as_bytes()[j] == b'\"' {active_double_quotes = false; change_of_q = true;}
+            } else if command.as_bytes()[j] == b'\'' {active_single_quotes = true; change_of_q = true;}
+            if change_of_q {
+                j += 1;
+                continue;
+            }
 
             //CHARACTER IF_ELSE
             //Double quotes not implemented yet
