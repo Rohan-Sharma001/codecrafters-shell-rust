@@ -46,9 +46,8 @@ fn separator(command: &str) -> Vec<String> {
             if active_single_quotes {
                 substring_to_be_added.push(character_j);
             }
-            else if active_single_quotes {
+            else if active_double_quotes {
                 substring_to_be_added.push(character_j);
-
             }
             else {
                 if character_j == ' ' {break;}
