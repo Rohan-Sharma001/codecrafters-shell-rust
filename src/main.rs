@@ -1,4 +1,4 @@
-use std::{collections::{HashMap, HashSet}, env::{self, Args}, fs::metadata, hash::Hash, io::Read, os::unix::fs::PermissionsExt, path, process::Command, str::{SplitWhitespace, pattern::CharArrayRefSearcher}, vec};
+use std::{collections::{HashMap, HashSet}, env::{self, Args}, fs::metadata, hash::Hash, io::Read, os::unix::fs::PermissionsExt, path, process::Command, str::{SplitWhitespace}, vec};
 #[allow(unused_imports)]
 use std::io::{self, Write};
 fn main() {
@@ -18,7 +18,7 @@ fn main() {
 }
 
 fn separator(command: &str) -> Vec<String> {
-    let mut vector_of_args: Vec<String> = command.split_whitespace().map(String::from).collect();
+    let mut vector_of_args: Vec<String> = Vec::<String>::new();
     let home_dir = match env::var("HOME") {
         Ok(home) => home,
         Err(_) => "".to_string()
@@ -26,19 +26,19 @@ fn separator(command: &str) -> Vec<String> {
 
     let mut active_single_quotes = false; 
     let mut active_double_quotes = false;
-    for mut i in 0..command.len() {
+    let mut i = 0;
+    while i < command.len() {
         let mut substring_to_be_added: String = "".to_string();
-        let mut j: usize = i-1;
+        let mut j: usize = i;
         while j < command.len()-1 {
-            j+=1;
             //EITHER ACTIVE SINGLE OR DOUBLE QUOTES NOT BOTH
             //NEVER INCLUDED IN FINAL ARGS
             if active_single_quotes {
-                if command.as_bytes()[j] == b'\'' {active_single_quotes = false; continue;}
-            } else if command.as_bytes()[j] == b'\"' {active_double_quotes = true; continue;}
+                if command.as_bytes()[j] == b'\'' {active_single_quotes = false; j+=1; continue;}
+            } else if command.as_bytes()[j] == b'\"' {active_double_quotes = true; j+=1; continue;}
             if active_double_quotes {
-                if command.as_bytes()[j] == b'\"' {active_double_quotes = false; continue;}
-            } else if command.as_bytes()[j] == b'\'' {active_single_quotes = true; continue;}
+                if command.as_bytes()[j] == b'\"' {active_double_quotes = false; j+=1; continue;}
+            } else if command.as_bytes()[j] == b'\'' {active_single_quotes = true; j+=1; continue;}
 
             //CHARACTER IF_ELSE
             //Double quotes not implemented yet
@@ -49,7 +49,9 @@ fn separator(command: &str) -> Vec<String> {
             else if !active_double_quotes {
                 if character_j == ' ' {break;}
                 if character_j == '~' {substring_to_be_added.push_str(&home_dir);}
+                else {substring_to_be_added.push(character_j);}
             }
+            j+=1;
         }
         vector_of_args.push(substring_to_be_added);
         i = j + 1;
