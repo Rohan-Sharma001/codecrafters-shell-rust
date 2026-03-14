@@ -53,7 +53,7 @@ fn separator(command: &str) -> Vec<String> {
             }
             j+=1;
         }
-        vector_of_args.push(substring_to_be_added);
+        if substring_to_be_added.len() > 0 {vector_of_args.push(substring_to_be_added);}
         i = j + 1;
     }
     return vector_of_args;
