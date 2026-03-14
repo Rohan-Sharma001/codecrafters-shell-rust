@@ -1,18 +1,14 @@
-use std::{collections::{HashMap, HashSet}, env::{self, Args}, fs::metadata, hash::Hash, io::Read, os::unix::fs::PermissionsExt, path, process::Command, str::SplitWhitespace, vec};
+use std::{collections::{HashMap, HashSet}, env::{self, Args}, fs::metadata, hash::Hash, io::Read, os::unix::fs::PermissionsExt, path, process::Command, str::{SplitWhitespace, pattern::CharArrayRefSearcher}, vec};
 #[allow(unused_imports)]
 use std::io::{self, Write};
-use std::process;
-
 fn main() {
-    
-
     loop {
         print!("$ ");
         io::stdout().flush().unwrap();
         let mut command_input = String::new();
         io::stdin().read_line(&mut command_input);
         command_input.trim();
-        let command_return = commandParse(&command_input);
+        let command_return = command_parse(&command_input);
         match command_return {
             Ok(-1) => break,
             Ok(_) => continue,
@@ -22,11 +18,46 @@ fn main() {
 }
 
 fn separator(command: &str) -> Vec<String> {
-    let vector_of_args: Vec<String> = command.split_whitespace().map(String::from).collect();
+    let mut vector_of_args: Vec<String> = command.split_whitespace().map(String::from).collect();
+    let home_dir = match env::var("HOME") {
+        Ok(home) => home,
+        Err(_) => "".to_string()
+    };
+
+    let mut active_single_quotes = false; 
+    let mut active_double_quotes = false;
+    for mut i in 0..command.len() {
+        let mut substring_to_be_added: String = "".to_string();
+        let mut j: usize = i-1;
+        while j < command.len()-1 {
+            j+=1;
+            //EITHER ACTIVE SINGLE OR DOUBLE QUOTES NOT BOTH
+            //NEVER INCLUDED IN FINAL ARGS
+            if active_single_quotes {
+                if command.as_bytes()[j] == b'\'' {active_single_quotes = false; continue;}
+            } else if command.as_bytes()[j] == b'\"' {active_double_quotes = true; continue;}
+            if active_double_quotes {
+                if command.as_bytes()[j] == b'\"' {active_double_quotes = false; continue;}
+            } else if command.as_bytes()[j] == b'\'' {active_single_quotes = true; continue;}
+
+            //CHARACTER IF_ELSE
+            //Double quotes not implemented yet
+            let character_j = command.as_bytes()[j] as char;
+            if active_single_quotes {
+                substring_to_be_added.push(character_j);
+            }
+            else if !active_double_quotes {
+                if character_j == ' ' {break;}
+                if character_j == '~' {substring_to_be_added.push_str(&home_dir);}
+            }
+        }
+        vector_of_args.push(substring_to_be_added);
+        i = j + 1;
+    }
     return vector_of_args;
 }
 
-fn commandParse(command_input: &str) -> Result<i32, String> {
+fn command_parse(command_input: &str) -> Result<i32, String> {
     let mut inbuilt_commands = HashMap::<String, fn(Vec<String>, &HashSet<String>)->Result<i32, String>>::new();
     inbuilt_commands.insert("exit".to_string(), exit_program);
     inbuilt_commands.insert("echo".to_string(), echo);
@@ -64,11 +95,11 @@ fn commandParse(command_input: &str) -> Result<i32, String> {
     Ok(0)
 }
 
-fn exit_program(arg_array: Vec::<String>, commandSet: &HashSet<String>) -> Result<i32, String> {
+fn exit_program(_arg_array: Vec::<String>, _command_set: &HashSet<String>) -> Result<i32, String> {
     Ok(-1)
 }
 
-fn echo(arg_array: Vec::<String>, commandSet: &HashSet<String>) -> Result<i32, String> {
+fn echo(arg_array: Vec::<String>, _command_set: &HashSet<String>) -> Result<i32, String> {
     for i in 1..arg_array.len() {
         if i > 1 {print!(" ");}
         print!("{}", arg_array[i]);
@@ -105,12 +136,12 @@ fn path_finder(executable_name: &str) -> Result<String, bool> {
     return Err(false)
 }
 
-fn print_working_dir(arg_array: Vec::<String>, commandSet: &HashSet<String>) -> Result<i32, String> {
+fn print_working_dir(_arg_array: Vec::<String>, _command_set: &HashSet<String>) -> Result<i32, String> {
     println!("{}", env::current_dir().unwrap().display());
     Ok(1)
 }
 
-fn change_working_directory(arg_array: Vec::<String>, commandSet: &HashSet<String>) -> Result<i32, String> {
+fn change_working_directory(arg_array: Vec::<String>, _command_set: &HashSet<String>) -> Result<i32, String> {
     let mut newdir = match arg_array.get(1) {
         Some(dir) => dir.clone(),
         None => match env::var("HOME") {
@@ -118,9 +149,10 @@ fn change_working_directory(arg_array: Vec::<String>, commandSet: &HashSet<Strin
             Err(_) => return Err("No directory".to_string())
         }
     };
-    if let Ok(home) = env::var("HOME") {
-        newdir = newdir.replace("~", &home);
-    }
+    // Transfer implementation to seperator function
+    // if let Ok(home) = env::var("HOME") {
+    //     newdir = newdir.replace("~", &home);
+    // }
     match env::set_current_dir(&newdir) {
         Ok(_) => return Ok(0),
         Err(_) => {println!("{}: No such file or directory", newdir); return Err("directory doesn't exist".to_string())}
@@ -128,12 +160,12 @@ fn change_working_directory(arg_array: Vec::<String>, commandSet: &HashSet<Strin
 
 }
 
-fn type_function(arg_array: Vec::<String>, commandSet: &HashSet<String>) -> Result<i32, String> {
+fn type_function(arg_array: Vec::<String>, command_set: &HashSet<String>) -> Result<i32, String> {
     for i in 1..arg_array.len() {
         let command_to_search = arg_array.get(i);
         match command_to_search {
             Some(command_to_search) => {
-                if commandSet.contains(command_to_search) {
+                if command_set.contains(command_to_search) {
                     println!("{} is a shell builtin", command_to_search);
                     continue;
                 }
