@@ -46,7 +46,11 @@ fn separator(command: &str) -> Vec<String> {
             if active_single_quotes {
                 substring_to_be_added.push(character_j);
             }
-            else if !active_double_quotes {
+            else if active_single_quotes {
+                substring_to_be_added.push(character_j);
+
+            }
+            else {
                 if character_j == ' ' {break;}
                 if character_j == '~' {substring_to_be_added.push_str(&home_dir);}
                 else {substring_to_be_added.push(character_j);}
