@@ -1,4 +1,4 @@
-use std::{collections::{HashMap, HashSet}, env::{self, Args}, fs::metadata, hash::Hash, io::Read, os::unix::fs::PermissionsExt, path, process::Command, str::{SplitWhitespace}, vec};
+use std::{collections::{HashMap, HashSet}, env::{self, Args}, fs::metadata, hash::Hash, io::Read, os::unix::fs::PermissionsExt, path, process::Command, str::SplitWhitespace, thread::AccessError, vec};
 #[allow(unused_imports)]
 use std::io::{self, Write};
 fn main() {
@@ -31,23 +31,30 @@ fn separator(command: &str) -> Vec<String> {
         let mut substring_to_be_added: String = "".to_string();
         let mut j: usize = i;
         while j < command.len()-1 {
+            let character_j = command.as_bytes()[j] as char;
+
             //EITHER ACTIVE SINGLE OR DOUBLE QUOTES NOT BOTH
             //NEVER INCLUDED IN FINAL ARGS
-            let mut change_of_q = false;
-            if active_single_quotes {
-                if command.as_bytes()[j] == b'\'' {active_single_quotes = false; change_of_q = true;}
-            } else if command.as_bytes()[j] == b'\"' {active_double_quotes = true; change_of_q = true;}
-            if active_double_quotes {
-                if command.as_bytes()[j] == b'\"' {active_double_quotes = false; change_of_q = true;}
-            } else if command.as_bytes()[j] == b'\'' {active_single_quotes = true; change_of_q = true;}
-            if change_of_q {
-                j += 1;
-                continue;
+            // let mut change_of_q = false;
+            // if active_single_quotes {
+            //     if command.as_bytes()[j] == b'\'' {active_single_quotes = false; change_of_q = true;}
+            // } else if command.as_bytes()[j] == b'\"' {active_double_quotes = true; change_of_q = true;}
+            // if active_double_quotes {
+            //     if command.as_bytes()[j] == b'\"' {active_double_quotes = false; change_of_q = true;}
+            // } else if command.as_bytes()[j] == b'\'' {active_single_quotes = true; change_of_q = true;}
+            // if change_of_q {
+            //     j += 1;
+            //     continue;
+            // }
+            if character_j == '\'' {
+                if !active_double_quotes {active_single_quotes = !active_single_quotes; j+=1; continue;}
+            }
+            if character_j == '\"' {
+                if !active_single_quotes {active_double_quotes = !active_double_quotes; j+=1; continue;}
             }
 
             //CHARACTER IF_ELSE
             //Double quotes not implemented yet
-            let character_j = command.as_bytes()[j] as char;
             if active_single_quotes {
                 substring_to_be_added.push(character_j);
             }
