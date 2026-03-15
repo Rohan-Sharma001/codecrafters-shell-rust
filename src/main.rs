@@ -67,7 +67,7 @@ fn separator(command: &str) -> Vec<String> {
                 if character_j == ' ' {break;}
                 else if character_j == '~' {substring_to_be_added.push_str(&home_dir);}
                 else if character_j == '\\' {
-                    if j+1 < command.len()-1 {
+                    if j+1 < command.len() {
                         j+=1;
                         substring_to_be_added.push(command.as_bytes()[j] as char);
                     }
