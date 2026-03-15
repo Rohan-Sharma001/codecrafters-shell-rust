@@ -59,7 +59,15 @@ fn separator(command: &str) -> Vec<String> {
                 substring_to_be_added.push(character_j);
             }
             else if active_double_quotes {
-                substring_to_be_added.push(character_j);
+                // substring_to_be_added.push(character_j);
+                if character_j == '\\' && j+1 < command.len()-1 {
+                    let character_j1 = command.as_bytes()[j+1] as char;
+                    if character_j1 == '\"' || character_j1 == '\\' || character_j1 == '$' || character_j1 == '`' || character_j1 == '\n'  {
+                        substring_to_be_added.push(character_j1);
+                        j+=1;
+                    }
+                    else {substring_to_be_added.push(character_j)};
+                } else {substring_to_be_added.push(character_j)};
             }
             else {
                 if character_j == ' ' {break;}
