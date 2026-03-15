@@ -1,4 +1,4 @@
-use std::{collections::{HashMap, HashSet}, env::{self, Args}, fs::{File, metadata}, hash::Hash, io::{Read, Stderr}, os::unix::fs::PermissionsExt, path, process::Command, str::SplitWhitespace, thread::AccessError, vec};
+use std::{collections::{HashMap, HashSet}, env::{self, Args}, f32::consts::E, fs::{File, metadata}, hash::Hash, io::{Read, Stderr, StdoutLock, stdout}, os::unix::fs::PermissionsExt, path, process::{Command, Stdio}, str::SplitWhitespace, thread::AccessError, vec};
 #[allow(unused_imports)]
 use std::io::{self, Write};
 
@@ -97,20 +97,24 @@ fn command_parse(command_input: &str) -> Result<i32, String> {
     let mut arguments = separator(command_input);
     let command_name = arguments.get(0).cloned();
     let mut Stdout_stream: Box<dyn Write> = Box::new(io::stdout());
+    let mut Stdout_file = "".to_string();
     let mut Stderr_stream: Box<dyn Write> = Box::new(io::stderr());
+    let mut Stderr_file = "".to_string();
     let mut fInd = arguments.len();
     for i in 0..arguments.len() {
         if (arguments[i] == ">" || arguments[i] == "1>") && i < arguments.len()-1  {
             Stdout_stream = Box::new(File::create(arguments[i+1].clone()).unwrap());
             fInd = std::cmp::min(fInd, i);
+            Stdout_file = arguments[i+1].clone();
         }
         if arguments[i] == "2>" && i < arguments.len()-1 {
             Stderr_stream = Box::new(File::create(arguments[i+1].clone()).unwrap());
             fInd = std::cmp::min(fInd, i);
+            Stderr_file = arguments[i+1].clone();
         }
     }
     arguments.resize(fInd, "".to_string());
-    let output_stream = out_stream{stdout: Stdout_stream, stderr: Stderr_stream};
+    let mut output_stream = out_stream{stdout: Stdout_stream, stderr: Stderr_stream};
     
     match command_name {
         Some(command_name) => {
@@ -118,11 +122,19 @@ fn command_parse(command_input: &str) -> Result<i32, String> {
             if let Some(fc_ptr) = function_pointer {
                 return fc_ptr(arguments, &command_map, output_stream);
             } else {
-                let process_new = Command::new(&command_name).args(arguments.iter().skip(1)).spawn();
+                let stdo = match  File::create(Stdout_file){
+                    Ok(out_file) => std::process::Stdio::from(out_file),
+                    Err(_) => Stdio::inherit()
+                };
+                let stde = match  File::create(Stderr_file){
+                    Ok(err_file) => std::process::Stdio::from(err_file),
+                    Err(_) => Stdio::inherit()
+                };
+                let process_new = Command::new(&command_name).args(arguments.iter().skip(1)).stdout(stdo).stderr(stde).spawn();
                 if let Ok(mut new_proc) = process_new {
                     new_proc.wait();
                 } else {
-                    println!("{}: not found", command_name);
+                    writeln!(output_stream.stderr, "{}: not found", command_name);
                 }
             }
         },
