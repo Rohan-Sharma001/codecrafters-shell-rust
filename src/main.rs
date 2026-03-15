@@ -1,13 +1,20 @@
-use std::{collections::{HashMap, HashSet}, env::{self, Args}, fs::metadata, hash::Hash, io::Read, os::unix::fs::PermissionsExt, path, process::Command, str::SplitWhitespace, thread::AccessError, vec};
+use std::{collections::{HashMap, HashSet}, env::{self, Args}, fs::{File, metadata}, hash::Hash, io::{Read, Stderr}, os::unix::fs::PermissionsExt, path, process::Command, str::SplitWhitespace, thread::AccessError, vec};
 #[allow(unused_imports)]
 use std::io::{self, Write};
+
+struct out_stream {
+    stdout: Box<dyn Write>,
+    stderr: Box<dyn Write>,
+}
+
+use bytes::buf::Writer;
 fn main() {
     loop {
         print!("$ ");
         io::stdout().flush().unwrap();
         let mut command_input = String::new();
         io::stdin().read_line(&mut command_input);
-        command_input.trim();
+        command_input = command_input.trim().to_string();
         let command_return = command_parse(&command_input);
         match command_return {
             Ok(-1) => break,
@@ -30,22 +37,9 @@ fn separator(command: &str) -> Vec<String> {
     while i < command.len() {
         let mut substring_to_be_added: String = "".to_string();
         let mut j: usize = i;
-        while j < command.len()-1 {
+        while j < command.len() {
             let character_j = command.as_bytes()[j] as char;
 
-            //EITHER ACTIVE SINGLE OR DOUBLE QUOTES NOT BOTH
-            //NEVER INCLUDED IN FINAL ARGS
-            // let mut change_of_q = false;
-            // if active_single_quotes {
-            //     if command.as_bytes()[j] == b'\'' {active_single_quotes = false; change_of_q = true;}
-            // } else if command.as_bytes()[j] == b'\"' {active_double_quotes = true; change_of_q = true;}
-            // if active_double_quotes {
-            //     if command.as_bytes()[j] == b'\"' {active_double_quotes = false; change_of_q = true;}
-            // } else if command.as_bytes()[j] == b'\'' {active_single_quotes = true; change_of_q = true;}
-            // if change_of_q {
-            //     j += 1;
-            //     continue;
-            // }
             if character_j == '\'' {
                 if !active_double_quotes {active_single_quotes = !active_single_quotes; j+=1; continue;}
             }
@@ -60,7 +54,7 @@ fn separator(command: &str) -> Vec<String> {
             }
             else if active_double_quotes {
                 // substring_to_be_added.push(character_j);
-                if character_j == '\\' && j+1 < command.len()-1 {
+                if character_j == '\\' && j+1 < command.len() {
                     let character_j1 = command.as_bytes()[j+1] as char;
                     if character_j1 == '\"' || character_j1 == '\\' || character_j1 == '$' || character_j1 == '`' || character_j1 == '\n'  {
                         substring_to_be_added.push(character_j1);
@@ -89,7 +83,7 @@ fn separator(command: &str) -> Vec<String> {
 }
 
 fn command_parse(command_input: &str) -> Result<i32, String> {
-    let mut inbuilt_commands = HashMap::<String, fn(Vec<String>, &HashSet<String>)->Result<i32, String>>::new();
+    let mut inbuilt_commands = HashMap::<String, fn(Vec<String>, &HashSet<String>, out_stream)->Result<i32, String>>::new();
     inbuilt_commands.insert("exit".to_string(), exit_program);
     inbuilt_commands.insert("echo".to_string(), echo);
     inbuilt_commands.insert("type".to_string(), type_function);
@@ -100,16 +94,31 @@ fn command_parse(command_input: &str) -> Result<i32, String> {
     let command_map: HashSet<String> = inbuilt_commands.keys().cloned().collect();
     // let mut parts = command_input.splitn(2, char::is_whitespace);
 
-    let arguments = separator(command_input);
-    let command_name = arguments.get(0);
+    let mut arguments = separator(command_input);
+    let command_name = arguments.get(0).cloned();
+    let mut Stdout_stream: Box<dyn Write> = Box::new(io::stdout());
+    let mut Stderr_stream: Box<dyn Write> = Box::new(io::stderr());
+    let mut fInd = arguments.len();
+    for i in 0..arguments.len() {
+        if (arguments[i] == ">" || arguments[i] == "1>") && i < arguments.len()-1  {
+            Stdout_stream = Box::new(File::create(arguments[i+1].clone()).unwrap());
+            fInd = std::cmp::min(fInd, i);
+        }
+        if arguments[i] == "2>" && i < arguments.len()-1 {
+            Stderr_stream = Box::new(File::create(arguments[i+1].clone()).unwrap());
+            fInd = std::cmp::min(fInd, i);
+        }
+    }
+    arguments.resize(fInd, "".to_string());
+    let output_stream = out_stream{stdout: Stdout_stream, stderr: Stderr_stream};
     
     match command_name {
         Some(command_name) => {
-            let function_pointer = inbuilt_commands.get(command_name);
+            let function_pointer = inbuilt_commands.get(&command_name);
             if let Some(fc_ptr) = function_pointer {
-                return fc_ptr(arguments, &command_map);
+                return fc_ptr(arguments, &command_map, output_stream);
             } else {
-                let process_new = Command::new(command_name).args(arguments.iter().skip(1)).spawn();
+                let process_new = Command::new(&command_name).args(arguments.iter().skip(1)).spawn();
                 if let Ok(mut new_proc) = process_new {
                     new_proc.wait();
                 } else {
@@ -119,28 +128,27 @@ fn command_parse(command_input: &str) -> Result<i32, String> {
         },
         None => return Err("No Command".to_string())
     };
-    // match function_pointer {
-    //     Some(function_pointer) => return (function_pointer(arguments, &command_map)),
-    //     None => {println!("{}: command not found", command_name.unwrap()); return Err("Command not found".to_string())}
-    // };
     Ok(0)
 }
 
-fn exit_program(_arg_array: Vec::<String>, _command_set: &HashSet<String>) -> Result<i32, String> {
+fn exit_program(_arg_array: Vec::<String>, _command_set: &HashSet<String>, mut _output_stream: out_stream) -> Result<i32, String> {
     Ok(-1)
 }
 
-fn echo(arg_array: Vec::<String>, _command_set: &HashSet<String>) -> Result<i32, String> {
+fn echo(arg_array: Vec::<String>, _command_set: &HashSet<String>, mut output_stream: out_stream) -> Result<i32, String> {
     for i in 1..arg_array.len() {
         if i > 1 {print!(" ");}
-        print!("{}", arg_array[i]);
+        write!(output_stream.stdout, "{}", arg_array[i]);
     }
-    print!("\n");
+    write!(output_stream.stdout, "\n");
     Ok(0)
 }
 
 fn path_finder(executable_name: &str) -> Result<String, bool> {
-    let val = env::var("PATH").unwrap();
+    let val = match env::var("PATH") {
+        Ok(path_dir) => path_dir,
+        Err(_) => "".to_string() 
+    };
     let mut vector_of_paths = val.split(':');
     let mut path_iterator = vector_of_paths.next();
     loop {
@@ -167,12 +175,12 @@ fn path_finder(executable_name: &str) -> Result<String, bool> {
     return Err(false)
 }
 
-fn print_working_dir(_arg_array: Vec::<String>, _command_set: &HashSet<String>) -> Result<i32, String> {
-    println!("{}", env::current_dir().unwrap().display());
+fn print_working_dir(_arg_array: Vec::<String>, _command_set: &HashSet<String>, mut output_stream: out_stream) -> Result<i32, String> {
+    writeln!(output_stream.stdout, "{}", env::current_dir().unwrap().display());
     Ok(1)
 }
 
-fn change_working_directory(arg_array: Vec::<String>, _command_set: &HashSet<String>) -> Result<i32, String> {
+fn change_working_directory(arg_array: Vec::<String>, _command_set: &HashSet<String>, mut output_stream: out_stream) -> Result<i32, String> {
     let mut newdir = match arg_array.get(1) {
         Some(dir) => dir.clone(),
         None => match env::var("HOME") {
@@ -180,34 +188,31 @@ fn change_working_directory(arg_array: Vec::<String>, _command_set: &HashSet<Str
             Err(_) => return Err("No directory".to_string())
         }
     };
-    // Transfer implementation to seperator function
-    // if let Ok(home) = env::var("HOME") {
-    //     newdir = newdir.replace("~", &home);
-    // }
     match env::set_current_dir(&newdir) {
         Ok(_) => return Ok(0),
-        Err(_) => {println!("{}: No such file or directory", newdir); return Err("directory doesn't exist".to_string())}
+        Err(_) => {writeln!(output_stream.stderr,"{}: No such file or directory", newdir); return Err("directory doesn't exist".to_string())}
     }
 
 }
 
-fn type_function(arg_array: Vec::<String>, command_set: &HashSet<String>) -> Result<i32, String> {
+fn type_function(arg_array: Vec::<String>, command_set: &HashSet<String>, mut output_stream: out_stream) -> Result<i32, String> {
     for i in 1..arg_array.len() {
         let command_to_search = arg_array.get(i);
         match command_to_search {
             Some(command_to_search) => {
                 if command_set.contains(command_to_search) {
-                    println!("{} is a shell builtin", command_to_search);
+                    writeln!(output_stream.stdout, "{} is a shell builtin", command_to_search);
                     continue;
                 }
                 // Check if in PATH
                 match path_finder(command_to_search) {
-                    Ok(val) => {println!("{} is {}/{}", command_to_search, val, command_to_search); return Ok(0);},
+                    Ok(val) => {writeln!(output_stream.stdout, "{} is {}/{}", command_to_search, val, command_to_search); return Ok(0);},
                     Err(_) => {}
                 };
 
 
-                println!("{}: not found", command_to_search);
+                // println!("{}: not found", command_to_search);
+                writeln!(output_stream.stderr, "{}: not found", command_to_search);
             },
             None => {}
         }
