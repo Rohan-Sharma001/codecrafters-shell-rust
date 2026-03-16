@@ -1,8 +1,9 @@
-a.txt
-Cargo.lock
-Cargo.toml
-codecrafters.yml
-README.md
-src
-target
-your_program.sh
+total 32
+-rw-r--r-- 1 rohan rohan   82 Mar 16 02:08 a.txt
+-rw-r--r-- 1 rohan rohan 1987 Mar 11 12:47 Cargo.lock
+-rw-r--r-- 1 rohan rohan  366 Mar 11 12:47 Cargo.toml
+-rw-r--r-- 1 rohan rohan  284 Mar 11 12:47 codecrafters.yml
+-rw-r--r-- 1 rohan rohan 1430 Mar 11 12:47 README.md
+drwxr-xr-x 2 rohan rohan 4096 Mar 11 12:47 src
+drwxr-xr-x 4 rohan rohan 4096 Mar 11 17:47 target
+-rwxr-xr-x 1 rohan rohan  845 Mar 11 12:47 your_program.sh

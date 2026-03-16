@@ -1,10 +1,53 @@
-use std::{collections::{HashMap, HashSet}, env::{self, Args}, f32::consts::E, fs::{File, metadata}, hash::Hash, io::{Read, Stderr, StdoutLock, stdout}, os::unix::fs::PermissionsExt, path, process::{Command, Stdio}, str::SplitWhitespace, thread::AccessError, vec};
+use std::{clone, collections::{HashMap, HashSet}, env::{self, Args}, f32::consts::E, fs::{File, metadata}, hash::Hash, io::{Read, Stderr, StdoutLock, stderr, stdout}, os::unix::fs::PermissionsExt, path, process::{Command, Stdio}, str::SplitWhitespace, thread::AccessError, vec};
 #[allow(unused_imports)]
 use std::io::{self, Write};
+// use std::process::Stdio;
 
+impl From<&Output> for Stdio {
+    fn from(s: &Output) -> Self {
+        match s {
+            Output::Stdout => Stdio::inherit(),
+            Output::Stderr => Stdio::inherit(),
+            Output::File(file) => Stdio::from(file.try_clone().unwrap()),
+        }
+    }
+}
 struct out_stream {
-    stdout: Box<dyn Write>,
-    stderr: Box<dyn Write>,
+    stdout: Output,
+    stderr: Output,
+}
+
+enum Output {
+    Stdout,
+    Stderr,
+    File(std::fs::File)
+}
+
+impl Write for Output {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        match self {
+            Output::Stdout => stdout().write(buf),
+            Output::Stderr => stderr().write(buf),
+            Output::File(file) => file.write(buf)
+        }
+    }
+    fn flush(&mut self) -> io::Result<()> {
+        match self {
+            Output::Stdout => stdout().flush(),
+            Output::Stderr => stderr().flush(),
+            Output::File(file) => file.flush(),
+        }
+    }
+
+}
+impl Clone for Output {
+    fn clone(&self) -> Self {
+        match self {
+            Output::Stdout => Output::Stdout,
+            Output::Stderr => Output::Stderr,
+            Output::File(file) => Output::File(file.try_clone().unwrap())
+        }
+    }
 }
 
 use bytes::buf::Writer;
@@ -92,29 +135,33 @@ fn command_parse(command_input: &str) -> Result<i32, String> {
 
 
     let command_map: HashSet<String> = inbuilt_commands.keys().cloned().collect();
-    // let mut parts = command_input.splitn(2, char::is_whitespace);
 
     let mut arguments = separator(command_input);
     let command_name = arguments.get(0).cloned();
-    let mut Stdout_stream: Box<dyn Write> = Box::new(io::stdout());
-    let mut Stdout_file = "".to_string();
-    let mut Stderr_stream: Box<dyn Write> = Box::new(io::stderr());
-    let mut Stderr_file = "".to_string();
+    let mut Stdout_stream = Output::Stdout;
+    let mut Stderr_stream = Output::Stderr;
+    
     let mut fInd = arguments.len();
     for i in 0..arguments.len() {
         if (arguments[i] == ">" || arguments[i] == "1>") && i < arguments.len()-1  {
-            Stdout_stream = Box::new(File::create(arguments[i+1].clone()).unwrap());
+            Stdout_stream = Output::File(File::options().write(true).create(true).open(arguments[i+1].clone()).unwrap());
             fInd = std::cmp::min(fInd, i);
-            Stdout_file = arguments[i+1].clone();
         }
-        if arguments[i] == "2>" && i < arguments.len()-1 {
-            Stderr_stream = Box::new(File::create(arguments[i+1].clone()).unwrap());
+        else if arguments[i] == "2>" && i < arguments.len()-1 {
+            Stderr_stream = Output::File(File::options().write(true).create(true).open(arguments[i+1].clone()).unwrap());
             fInd = std::cmp::min(fInd, i);
-            Stderr_file = arguments[i+1].clone();
+        }
+        else if arguments[i] == ">>" || arguments[i] == "1>>" && i < arguments.len()-1 {
+            Stdout_stream = Output::File(File::options().append(true).create(true).open(arguments[i+1].clone()).unwrap());
+            fInd = std::cmp::min(fInd, i);
+        }
+        else if arguments[i] == "2>>" && i < arguments.len()-1 {
+            Stderr_stream = Output::File(File::options().write(true).append(true).create(true).open(arguments[i+1].clone()).unwrap());
+            fInd = std::cmp::min(fInd, i);
         }
     }
     arguments.resize(fInd, "".to_string());
-    let mut output_stream = out_stream{stdout: Stdout_stream, stderr: Stderr_stream};
+    let mut output_stream = out_stream{stdout: Stdout_stream.clone(), stderr: Stderr_stream.clone()};
     
     match command_name {
         Some(command_name) => {
@@ -122,15 +169,15 @@ fn command_parse(command_input: &str) -> Result<i32, String> {
             if let Some(fc_ptr) = function_pointer {
                 return fc_ptr(arguments, &command_map, output_stream);
             } else {
-                let stdo = match  File::create(Stdout_file){
-                    Ok(out_file) => std::process::Stdio::from(out_file),
-                    Err(_) => Stdio::inherit()
-                };
-                let stde = match  File::create(Stderr_file){
-                    Ok(err_file) => std::process::Stdio::from(err_file),
-                    Err(_) => Stdio::inherit()
-                };
-                let process_new = Command::new(&command_name).args(arguments.iter().skip(1)).stdout(stdo).stderr(stde).spawn();
+                // let stdo = match  File::create(Stdout_file){
+                //     Ok(out_file) => std::process::Stdio::from(out_file),
+                //     Err(_) => Stdio::inherit()
+                // };
+                // let stde = match  File::create(Stderr_file){
+                //     Ok(err_file) => std::process::Stdio::from(err_file),
+                //     Err(_) => Stdio::inherit()
+                // };
+                let process_new = Command::new(&command_name).args(arguments.iter().skip(1)).stdout(Stdio::from((&Stdout_stream))).stderr(Stdio::from(&Stderr_stream)).spawn();
                 if let Ok(mut new_proc) = process_new {
                     new_proc.wait();
                 } else {
