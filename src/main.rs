@@ -1,7 +1,18 @@
-use std::{clone, collections::{HashMap, HashSet}, env::{self, Args}, f32::consts::E, fs::{File, metadata}, hash::Hash, io::{Read, Stderr, StdoutLock, stderr, stdout}, os::unix::fs::PermissionsExt, path, process::{Command, Stdio}, str::SplitWhitespace, thread::AccessError, vec};
+use std::{collections::{HashMap, HashSet}, env::{self}, ffi::c_long, fs::{File, metadata}, io::{Read, stderr, stdout}, os::unix::fs::PermissionsExt, process::{Command, Stdio}};
 #[allow(unused_imports)]
+use std::sync::LazyLock;
 use std::io::{self, Write};
-// use std::process::Stdio;
+use termios::*;
+type BuiltinHandler = fn(Vec<String>, out_stream) -> Result<i32, String>;
+static inbuilt_commands: LazyLock<HashMap<&'static str, BuiltinHandler>> = LazyLock::new(|| {
+    HashMap::from([
+        ("exit", exit_program as BuiltinHandler),
+        ("echo", echo as BuiltinHandler),
+        ("type", type_function as BuiltinHandler),
+        ("pwd", print_working_dir as BuiltinHandler),
+        ("cd", change_working_directory as BuiltinHandler),
+    ])
+});
 
 impl From<&Output> for Stdio {
     fn from(s: &Output) -> Self {
@@ -49,14 +60,34 @@ impl Clone for Output {
         }
     }
 }
+struct RawMode {
+    org: Termios,
+}
+impl RawMode {
+    fn new() -> Self {
+        let fd = 0;
+        let mut term = Termios::from_fd(fd).unwrap();
+        let org = term.clone();
+        term.c_lflag &= !(ICANON | ECHO);
+        tcsetattr(fd, TCSANOW, &term).unwrap();
+        RawMode {org}
+    }
+}
+impl Drop for RawMode {
+    fn drop(&mut self) {
+        let _ = tcsetattr(0, TCSANOW, &self.org).unwrap();
+    }
+}
 
-use bytes::buf::Writer;
 fn main() {
+    let mut command_input = String::new();
     loop {
-        print!("$ ");
-        io::stdout().flush().unwrap();
-        let mut command_input = String::new();
-        io::stdin().read_line(&mut command_input);
+        // print!("$ ");
+        io::stdout().flush();
+        terminal_read(&mut command_input);
+        print!("\n");
+        // println!("{}", command_input);
+        // let mut command_input = String::new();
         command_input = command_input.trim().to_string();
         let command_return = command_parse(&command_input);
         match command_return {
@@ -66,6 +97,96 @@ fn main() {
         }
     }
 }
+
+fn terminal_read(buffer: &mut String) {
+    print!("$ ");
+    io::stdout().flush();
+    buffer.clear();
+    let mut cursor = 0;
+    let raw_term = RawMode::new();
+    let mut char_in = [0u8; 1];
+    // let mut buffer = String::new();
+
+    loop {
+        io::stdin().read_exact(&mut char_in).unwrap();
+        let byte_read = char_in[0] as char;
+        match char_in[0] {
+            b'\n' => {break;}
+            127 => {
+                if cursor > 0 {
+                    buffer.remove(cursor-1);
+                    cursor-=1;
+                }
+            }
+            b'\t' => {
+                longest_common_prefix(buffer);
+                // buffer.push(' ');
+                cursor = buffer.len();
+            }
+            27 => {
+                let mut buff = [0u8; 64];
+                let mut char_inn = [0u8; 1];
+                for i in 0..64 {
+                    io::stdin().read_exact(&mut char_inn).unwrap();
+                    buff[i] = char_inn[0];
+                    // if buff[i].is_ascii_alphabetic() {break;}
+                    if buff[i] <= 126 && buff[i] >= 64 && buff[i] != 91 {break;}
+                }
+                // io::stdin().read_exact(&mut buff).unwrap();
+                match buff {
+                    [91,68, ..] if cursor > 0 => cursor-=1,
+                    [91,67, ..] if cursor < buffer.len() => cursor+=1,
+                    [91,51,126, ..] if cursor < buffer.len()-1 => {buffer.remove(cursor);}
+                    _ => {}
+                }
+            }
+            char => {
+                buffer.insert(cursor, char as char);
+                cursor+=1;
+            }
+        }
+        buffer.push(' ');
+        print!("\r$ {}", buffer); //Send cursor to beginning of line -> write line
+        print!("\x1b[K"); //Clear characters after buffer
+        print!("\x1b[{}D", buffer.len()-cursor);
+        buffer.pop();
+        io::stdout().flush();
+    }
+}
+
+fn command_matches(prefix: &str) -> Vec<String> {
+    let mut VecSt = Vec::<String>::new();
+    for cmd in inbuilt_commands.keys() {
+        if cmd.starts_with(prefix) {
+            VecSt.push(cmd.to_string());
+        }
+    }
+    VecSt
+}
+
+fn longest_common_prefix(cmd_buffer: &mut String) {
+    let matches = command_matches(&cmd_buffer);
+    if matches.len() == 0 {
+        return;
+    }
+    let mut longest_common_index = 0;
+    'counter: loop {
+        for cmd in &matches {
+            if let Some(char) = cmd.as_bytes().get(longest_common_index) {
+                if *char != matches[0].as_bytes()[longest_common_index] {break 'counter;}
+            } else {
+                break 'counter;
+            }
+        }
+        longest_common_index += 1;
+    }
+    let longest_common_str = String::from_utf8(matches[0].as_bytes()[0..longest_common_index].to_vec()).unwrap();
+    *cmd_buffer = longest_common_str;
+    if (matches.len() == 1) {cmd_buffer.push(' ');}
+}
+// fn replace_current_token(buffer: &mut String, cursor: &mut usize, replacement: &str) {
+//     buffer = 
+// }
 
 fn separator(command: &str) -> Vec<String> {
     let mut vector_of_args: Vec<String> = Vec::<String>::new();
@@ -126,16 +247,6 @@ fn separator(command: &str) -> Vec<String> {
 }
 
 fn command_parse(command_input: &str) -> Result<i32, String> {
-    let mut inbuilt_commands = HashMap::<String, fn(Vec<String>, &HashSet<String>, out_stream)->Result<i32, String>>::new();
-    inbuilt_commands.insert("exit".to_string(), exit_program);
-    inbuilt_commands.insert("echo".to_string(), echo);
-    inbuilt_commands.insert("type".to_string(), type_function);
-    inbuilt_commands.insert("pwd".to_string(), print_working_dir);
-    inbuilt_commands.insert("cd".to_string(), change_working_directory);
-
-
-    let command_map: HashSet<String> = inbuilt_commands.keys().cloned().collect();
-
     let mut arguments = separator(command_input);
     let command_name = arguments.get(0).cloned();
     let mut Stdout_stream = Output::Stdout;
@@ -144,11 +255,11 @@ fn command_parse(command_input: &str) -> Result<i32, String> {
     let mut fInd = arguments.len();
     for i in 0..arguments.len() {
         if (arguments[i] == ">" || arguments[i] == "1>") && i < arguments.len()-1  {
-            Stdout_stream = Output::File(File::options().write(true).create(true).open(arguments[i+1].clone()).unwrap());
+            Stdout_stream = Output::File(File::options().truncate(true).write(true).create(true).open(arguments[i+1].clone()).unwrap());
             fInd = std::cmp::min(fInd, i);
         }
         else if arguments[i] == "2>" && i < arguments.len()-1 {
-            Stderr_stream = Output::File(File::options().write(true).create(true).open(arguments[i+1].clone()).unwrap());
+            Stderr_stream = Output::File(File::options().truncate(true).write(true).create(true).open(arguments[i+1].clone()).unwrap());
             fInd = std::cmp::min(fInd, i);
         }
         else if arguments[i] == ">>" || arguments[i] == "1>>" && i < arguments.len()-1 {
@@ -165,9 +276,9 @@ fn command_parse(command_input: &str) -> Result<i32, String> {
     
     match command_name {
         Some(command_name) => {
-            let function_pointer = inbuilt_commands.get(&command_name);
+            let function_pointer = inbuilt_commands.get(command_name.as_str());
             if let Some(fc_ptr) = function_pointer {
-                return fc_ptr(arguments, &command_map, output_stream);
+                return fc_ptr(arguments, output_stream);
             } else {
                 // let stdo = match  File::create(Stdout_file){
                 //     Ok(out_file) => std::process::Stdio::from(out_file),
@@ -190,11 +301,11 @@ fn command_parse(command_input: &str) -> Result<i32, String> {
     Ok(0)
 }
 
-fn exit_program(_arg_array: Vec::<String>, _command_set: &HashSet<String>, mut _output_stream: out_stream) -> Result<i32, String> {
+fn exit_program(_arg_array: Vec::<String>, mut _output_stream: out_stream) -> Result<i32, String> {
     Ok(-1)
 }
 
-fn echo(arg_array: Vec::<String>, _command_set: &HashSet<String>, mut output_stream: out_stream) -> Result<i32, String> {
+fn echo(arg_array: Vec::<String>, mut output_stream: out_stream) -> Result<i32, String> {
     for i in 1..arg_array.len() {
         if i > 1 {print!(" ");}
         write!(output_stream.stdout, "{}", arg_array[i]);
@@ -234,12 +345,12 @@ fn path_finder(executable_name: &str) -> Result<String, bool> {
     return Err(false)
 }
 
-fn print_working_dir(_arg_array: Vec::<String>, _command_set: &HashSet<String>, mut output_stream: out_stream) -> Result<i32, String> {
+fn print_working_dir(_arg_array: Vec::<String>, mut output_stream: out_stream) -> Result<i32, String> {
     writeln!(output_stream.stdout, "{}", env::current_dir().unwrap().display());
     Ok(1)
 }
 
-fn change_working_directory(arg_array: Vec::<String>, _command_set: &HashSet<String>, mut output_stream: out_stream) -> Result<i32, String> {
+fn change_working_directory(arg_array: Vec::<String>, mut output_stream: out_stream) -> Result<i32, String> {
     let mut newdir = match arg_array.get(1) {
         Some(dir) => dir.clone(),
         None => match env::var("HOME") {
@@ -254,12 +365,12 @@ fn change_working_directory(arg_array: Vec::<String>, _command_set: &HashSet<Str
 
 }
 
-fn type_function(arg_array: Vec::<String>, command_set: &HashSet<String>, mut output_stream: out_stream) -> Result<i32, String> {
+fn type_function(arg_array: Vec::<String>, mut output_stream: out_stream) -> Result<i32, String> {
     for i in 1..arg_array.len() {
         let command_to_search = arg_array.get(i);
         match command_to_search {
             Some(command_to_search) => {
-                if command_set.contains(command_to_search) {
+                if inbuilt_commands.contains_key(command_to_search.as_str()) {
                     writeln!(output_stream.stdout, "{} is a shell builtin", command_to_search);
                     continue;
                 }
