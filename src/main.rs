@@ -150,6 +150,7 @@ fn terminal_read(buffer: &mut String) {
         print!("\x1b[K"); //Clear characters after buffer
         print!("\x1b[{}D", buffer.len()-cursor);
         buffer.pop();
+        if buffer.ends_with('\x07') {buffer.pop();}
         io::stdout().flush();
     }
 }
@@ -167,7 +168,8 @@ fn command_matches(prefix: &str) -> Vec<String> {
 fn longest_common_prefix(cmd_buffer: &mut String) {
     let matches = command_matches(&cmd_buffer);
     if matches.len() == 0 {
-        print!("\0x7");
+        cmd_buffer.push('\x07');
+        io::stdout().flush();
         return;
     }
     let mut longest_common_index = 0;
