@@ -167,6 +167,7 @@ fn command_matches(prefix: &str) -> Vec<String> {
 fn longest_common_prefix(cmd_buffer: &mut String) {
     let matches = command_matches(&cmd_buffer);
     if matches.len() == 0 {
+        print!("\0x7");
         return;
     }
     let mut longest_common_index = 0;
