@@ -1,4 +1,4 @@
-use std::{collections::{HashMap, HashSet}, env::{self}, ffi::c_long, fs::{File, metadata}, io::{Read, stderr, stdout}, os::unix::fs::PermissionsExt, process::{Command, Stdio}};
+use std::{collections::{HashMap, HashSet}, env::{self}, ffi::c_long, fs::{self, File, metadata}, io::{Read, stderr, stdout}, os::unix::fs::PermissionsExt, process::{Command, Stdio}};
 #[allow(unused_imports)]
 use std::sync::LazyLock;
 use std::io::{self, Write};
@@ -161,6 +161,33 @@ fn command_matches(prefix: &str) -> Vec<String> {
         if cmd.starts_with(prefix) {
             VecSt.push(cmd.to_string());
         }
+    }
+    let path_dir_list = match env::var("PATH") {
+        Ok(path_dir_list) => path_dir_list,
+        Err(_) => "".to_string() 
+    };
+    let mut vector_of_paths = path_dir_list.split(':');
+    let mut path_iterator = vector_of_paths.next();
+    loop {
+        match path_iterator {
+                Some(path_dir) => {
+                    match fs::read_dir(path_dir) {
+                        Ok(rdir) => {
+                            for entry in rdir {
+                                if let Ok(valid_entry) = entry {
+                                    let fname = valid_entry.file_name().into_string();
+                                    if let Ok(fname_str) = fname && fname_str.starts_with(prefix) {
+                                        VecSt.push(fname_str);
+                                    } 
+                                }
+                            }
+                        }
+                        Err(_) => {}
+                    }
+                }            
+                None => break
+        }
+        path_iterator = vector_of_paths.next();
     }
     VecSt
 }
