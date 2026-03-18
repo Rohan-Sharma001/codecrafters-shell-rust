@@ -197,31 +197,21 @@ fn command_matches(prefix: &str) -> BTreeSet<String> {
     VecSt
 }
 
-// fn longest_common_prefix(cmd_buffer: &mut String) {
-//     let matches = command_matches(&cmd_buffer);
-//     if matches.len() == 0 {
-//         cmd_buffer.push('\x07');
-//         io::stdout().flush();
-//         return;
-//     }
-//     let mut longest_common_index = 0;
-//     'counter: loop {
-//         for cmd in &matches {
-//             if let Some(char) = cmd.as_bytes().get(longest_common_index) {
-//                 if *char != matches[0].as_bytes()[longest_common_index] {break 'counter;}
-//             } else {
-//                 break 'counter;
-//             }
-//         }
-//         longest_common_index += 1;
-//     }
-//     let longest_common_str = String::from_utf8(matches[0].as_bytes()[0..longest_common_index].to_vec()).unwrap();
-//     *cmd_buffer = longest_common_str;
-//     if (longest_common_index == matches[0].as_bytes().len()) {cmd_buffer.push(' ');}
-// }
-// fn replace_current_token(buffer: &mut String, cursor: &mut usize, replacement: &str) {
-//     buffer = 
-// }
+fn longest_common_prefix(cmd_buffer: &mut String) -> Option<String> {
+    let matches = command_matches(&cmd_buffer);
+    if matches.len() == 0 {
+        cmd_buffer.push('\x07');
+        io::stdout().flush();
+        return None;
+    }
+    let ptr = matches.iter().next();
+    let fword = ptr.unwrap().clone();
+    for cmds in matches {
+        if !cmds.starts_with(&fword) {return None;}
+    }
+    return Some(fword);
+}
+
 fn match_command(cmd_buffer: &mut String, multi_output: &mut bool) {
     let matches = command_matches(&cmd_buffer);
     if matches.len() == 0 {
@@ -242,6 +232,10 @@ fn match_command(cmd_buffer: &mut String, multi_output: &mut bool) {
         *multi_output = false;
     }
     else {
+        match longest_common_prefix(cmd_buffer) {
+            Some(word) => {*cmd_buffer = word;return;}
+            None => {}
+        }
         cmd_buffer.push('\x07');
         *multi_output = true;
     }
