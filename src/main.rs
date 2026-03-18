@@ -212,7 +212,7 @@ fn longest_common_prefix(cmd_buffer: &mut String) {
     }
     let longest_common_str = String::from_utf8(matches[0].as_bytes()[0..longest_common_index].to_vec()).unwrap();
     *cmd_buffer = longest_common_str;
-    if (matches.len() == 1) {cmd_buffer.push(' ');}
+    if (longest_common_index == matches[0].as_bytes().len()) {cmd_buffer.push(' ');}
 }
 // fn replace_current_token(buffer: &mut String, cursor: &mut usize, replacement: &str) {
 //     buffer = 
