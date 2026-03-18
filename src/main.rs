@@ -4,6 +4,7 @@ use std::sync::LazyLock;
 use std::io::{self, Write};
 use termios::*;
 type BuiltinHandler = fn(Vec<String>, out_stream) -> Result<i32, String>;
+use std::collections::BTreeSet;
 static inbuilt_commands: LazyLock<HashMap<&'static str, BuiltinHandler>> = LazyLock::new(|| {
     HashMap::from([
         ("exit", exit_program as BuiltinHandler),
@@ -106,6 +107,7 @@ fn terminal_read(buffer: &mut String) {
     let raw_term = RawMode::new();
     let mut char_in = [0u8; 1];
     // let mut buffer = String::new();
+    let mut multi_output = false;
 
     loop {
         io::stdin().read_exact(&mut char_in).unwrap();
@@ -117,9 +119,10 @@ fn terminal_read(buffer: &mut String) {
                     buffer.remove(cursor-1);
                     cursor-=1;
                 }
+                multi_output = false;
             }
             b'\t' => {
-                longest_common_prefix(buffer);
+                match_command(buffer, &mut multi_output);
                 // buffer.push(' ');
                 cursor = buffer.len();
             }
@@ -139,10 +142,12 @@ fn terminal_read(buffer: &mut String) {
                     [91,51,126, ..] if cursor < buffer.len()-1 => {buffer.remove(cursor);}
                     _ => {}
                 }
+                multi_output = false;
             }
             char => {
                 buffer.insert(cursor, char as char);
                 cursor+=1;
+                multi_output = false;
             }
         }
         buffer.push(' ');
@@ -155,11 +160,11 @@ fn terminal_read(buffer: &mut String) {
     }
 }
 
-fn command_matches(prefix: &str) -> Vec<String> {
-    let mut VecSt = Vec::<String>::new();
+fn command_matches(prefix: &str) -> BTreeSet<String> {
+    let mut VecSt = BTreeSet::<String>::new();
     for cmd in inbuilt_commands.keys() {
         if cmd.starts_with(prefix) {
-            VecSt.push(cmd.to_string());
+            VecSt.insert(cmd.to_string());
         }
     }
     let path_dir_list = match env::var("PATH") {
@@ -177,7 +182,7 @@ fn command_matches(prefix: &str) -> Vec<String> {
                                 if let Ok(valid_entry) = entry {
                                     let fname = valid_entry.file_name().into_string();
                                     if let Ok(fname_str) = fname && fname_str.starts_with(prefix) {
-                                        VecSt.push(fname_str);
+                                        VecSt.insert(fname_str);
                                     } 
                                 }
                             }
@@ -192,32 +197,56 @@ fn command_matches(prefix: &str) -> Vec<String> {
     VecSt
 }
 
-fn longest_common_prefix(cmd_buffer: &mut String) {
+// fn longest_common_prefix(cmd_buffer: &mut String) {
+//     let matches = command_matches(&cmd_buffer);
+//     if matches.len() == 0 {
+//         cmd_buffer.push('\x07');
+//         io::stdout().flush();
+//         return;
+//     }
+//     let mut longest_common_index = 0;
+//     'counter: loop {
+//         for cmd in &matches {
+//             if let Some(char) = cmd.as_bytes().get(longest_common_index) {
+//                 if *char != matches[0].as_bytes()[longest_common_index] {break 'counter;}
+//             } else {
+//                 break 'counter;
+//             }
+//         }
+//         longest_common_index += 1;
+//     }
+//     let longest_common_str = String::from_utf8(matches[0].as_bytes()[0..longest_common_index].to_vec()).unwrap();
+//     *cmd_buffer = longest_common_str;
+//     if (longest_common_index == matches[0].as_bytes().len()) {cmd_buffer.push(' ');}
+// }
+// fn replace_current_token(buffer: &mut String, cursor: &mut usize, replacement: &str) {
+//     buffer = 
+// }
+fn match_command(cmd_buffer: &mut String, multi_output: &mut bool) {
     let matches = command_matches(&cmd_buffer);
     if matches.len() == 0 {
         cmd_buffer.push('\x07');
         io::stdout().flush();
         return;
     }
-    let mut longest_common_index = 0;
-    'counter: loop {
-        for cmd in &matches {
-            if let Some(char) = cmd.as_bytes().get(longest_common_index) {
-                if *char != matches[0].as_bytes()[longest_common_index] {break 'counter;}
-            } else {
-                break 'counter;
-            }
+    else if matches.len() == 1 {
+        *cmd_buffer = matches.iter().next().unwrap().clone();
+        cmd_buffer.push(' ');
+    } 
+    else if *multi_output {
+        print!("\n");
+        for element in matches {
+            print!("{}  ", element);
         }
-        longest_common_index += 1;
+        print!("\n");
+        *multi_output = false;
     }
-    let longest_common_str = String::from_utf8(matches[0].as_bytes()[0..longest_common_index].to_vec()).unwrap();
-    *cmd_buffer = longest_common_str;
-    if (longest_common_index == matches[0].as_bytes().len()) {cmd_buffer.push(' ');}
-}
-// fn replace_current_token(buffer: &mut String, cursor: &mut usize, replacement: &str) {
-//     buffer = 
-// }
+    else {
+        cmd_buffer.push('\x07');
+        *multi_output = true;
+    }
 
+}
 fn separator(command: &str) -> Vec<String> {
     let mut vector_of_args: Vec<String> = Vec::<String>::new();
     let home_dir = match env::var("HOME") {
