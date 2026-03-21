@@ -1,4 +1,4 @@
-use std::{collections::{HashMap, HashSet}, env::{self}, ffi::c_long, fs::{self, File, metadata}, io::{Read, stderr, stdout}, os::unix::fs::PermissionsExt, process::{Command, Stdio}};
+use std::{collections::HashMap, env::{self}, fs::{self, File, metadata}, io::{Read, stderr, stdout}, os::unix::fs::PermissionsExt, process::{Command, Stdio}};
 #[allow(unused_imports)]
 use std::sync::LazyLock;
 use std::io::{self, Write};
@@ -14,7 +14,6 @@ static inbuilt_commands: LazyLock<HashMap<&'static str, BuiltinHandler>> = LazyL
         ("cd", change_working_directory as BuiltinHandler),
     ])
 });
-
 impl From<&Output> for Stdio {
     fn from(s: &Output) -> Self {
         match s {
@@ -28,13 +27,11 @@ struct out_stream {
     stdout: Output,
     stderr: Output,
 }
-
 enum Output {
     Stdout,
     Stderr,
     File(std::fs::File)
 }
-
 impl Write for Output {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         match self {
@@ -79,7 +76,6 @@ impl Drop for RawMode {
         let _ = tcsetattr(0, TCSANOW, &self.org).unwrap();
     }
 }
-
 fn main() {
     let mut command_input = String::new();
     loop {
@@ -98,8 +94,7 @@ fn main() {
         }
     }
 }
-
-fn terminal_read(buffer: &mut String) {
+fn terminal_read(buffer: &mut String) { //Continuously process input
     print!("$ ");
     io::stdout().flush();
     buffer.clear();
@@ -122,9 +117,9 @@ fn terminal_read(buffer: &mut String) {
                 multi_output = false;
             }
             b'\t' => {
-                match_command(buffer, &mut multi_output);
+                to_replace(buffer, &mut cursor, &mut multi_output);
                 // buffer.push(' ');
-                cursor = buffer.len();
+                // cursor = buffer.len();
             }
             27 => {
                 let mut buff = [0u8; 64];
@@ -154,13 +149,27 @@ fn terminal_read(buffer: &mut String) {
         print!("\r$ {}", buffer); //Send cursor to beginning of line -> write line
         print!("\x1b[K"); //Clear characters after buffer
         print!("\x1b[{}D", buffer.len()-cursor);
+        io::stdout().flush();
         buffer.pop();
         if buffer.ends_with('\x07') {buffer.pop();}
         io::stdout().flush();
     }
 }
-
-fn command_matches(prefix: &str) -> BTreeSet<String> {
+fn file_matches(token: &str) -> BTreeSet<String> { //Find matching files
+    let mut VecSt = BTreeSet::<String>::new();
+    let dir = env::current_dir().unwrap();
+    let read_dir = fs::read_dir(dir).unwrap();
+        for entry in read_dir {
+            if let Ok(ent) = entry {
+                let n = ent.file_name();
+                if (ent.file_name().to_string_lossy().starts_with(token)) {VecSt.insert(ent.file_name().to_string_lossy().to_string());}
+            } else {
+                break;
+            }
+        }
+    VecSt
+}
+fn command_matches(prefix: &str) -> BTreeSet<String> { //Find matching commands
     let mut VecSt = BTreeSet::<String>::new();
     for cmd in inbuilt_commands.keys() {
         if cmd.starts_with(prefix) {
@@ -196,11 +205,11 @@ fn command_matches(prefix: &str) -> BTreeSet<String> {
     }
     VecSt
 }
-
-fn longest_common_prefix(cmd_buffer: &mut String) -> Option<String> {
-    let matches = command_matches(&cmd_buffer);
+fn longest_common_prefix(matches: BTreeSet<String>) -> Option<String> {
+    // let matches = command_matches(cmd_buffer);
     if matches.len() == 0 {
-        cmd_buffer.push('\x07');
+        //cmd_buffer.push('\x07');
+        print!("\x07");
         io::stdout().flush();
         return None;
     }
@@ -211,11 +220,63 @@ fn longest_common_prefix(cmd_buffer: &mut String) -> Option<String> {
     }
     return Some(fword);
 }
+fn to_replace(cmd_buffer: &mut String, cursor_pos: &mut usize, multi_output: &mut bool) { //Identify what to replace
+    //IDENTIFY TOKEN TO AUTOCOMPLETE
+    let (token_begin,token_end, token_index) = current_token_bounds(cmd_buffer, cursor_pos);
+    let mut str_to_complete = cmd_buffer[token_begin..*cursor_pos].to_string();
+    let replace_cmd = token_index == 0;
+    match_command(&mut str_to_complete, multi_output, replace_cmd);
+    cmd_buffer.replace_range(token_begin..token_end, &str_to_complete);
+    *cursor_pos += str_to_complete.len()-(token_end - token_begin);
+}
+fn current_token_bounds(command: &mut String, cursor_pos: &mut usize) -> (usize,usize, usize) { //Find beginning and ends of current token
+    let mut token_begin = 0;
+    let mut token_end = 0;
+    let mut token_index = 0;
 
-fn match_command(cmd_buffer: &mut String, multi_output: &mut bool) {
-    let matches = command_matches(&cmd_buffer);
+    let mut active_single_quotes = false; 
+    let mut active_double_quotes = false;
+    let mut i = 0;
+    while i < command.len() {
+        let mut j: usize = i;
+        token_begin = i;
+        token_end = j;
+        while j < command.len() {
+            let character_j = command.as_bytes()[j] as char;
+
+            if character_j == '\'' {
+                if !active_double_quotes {active_single_quotes = !active_single_quotes; j+=1; continue;}
+            }
+            if character_j == '\"' {
+                if !active_single_quotes {active_double_quotes = !active_double_quotes; j+=1; continue;}
+            }
+
+            //CHARACTER IF_ELSE
+            if active_single_quotes {
+            }
+            else if active_double_quotes {
+            }
+            else {
+                if character_j == ' ' {break;}
+            }
+            j+=1;
+        }
+        if j >= *cursor_pos {token_end = j; break;}
+        i = j + 1;
+        if (command.as_bytes()[i] as char != ' ') {token_index+=1;}
+
+    }
+
+    return (token_begin, token_end, token_index)
+}
+fn match_command(cmd_buffer: &mut String, multi_output: &mut bool, replace_cmd: bool) {
+    let matches = match replace_cmd {
+        true => command_matches(&cmd_buffer),
+        false => file_matches(&cmd_buffer)
+    };
     if matches.len() == 0 {
-        cmd_buffer.push('\x07');
+        // cmd_buffer.push('\x07');
+        print!("\x07");
         io::stdout().flush();
         return;
     }
@@ -232,16 +293,17 @@ fn match_command(cmd_buffer: &mut String, multi_output: &mut bool) {
         *multi_output = false;
     }
     else {
-        match longest_common_prefix(cmd_buffer) {
+        match longest_common_prefix(matches) {
             Some(word) => {*cmd_buffer = word;return;}
             None => {}
         }
-        cmd_buffer.push('\x07');
+        // cmd_buffer.push('\x07');
+        print!("\x07");
         *multi_output = true;
     }
 
 }
-fn separator(command: &str) -> Vec<String> {
+fn separator(command: &str) -> Vec<String> { //TOKENIZE
     let mut vector_of_args: Vec<String> = Vec::<String>::new();
     let home_dir = match env::var("HOME") {
         Ok(home) => home,
@@ -298,8 +360,7 @@ fn separator(command: &str) -> Vec<String> {
     }
     return vector_of_args;
 }
-
-fn command_parse(command_input: &str) -> Result<i32, String> {
+fn command_parse(command_input: &String) -> Result<i32, String> { //COMMAND PARSER
     let mut arguments = separator(command_input);
     let command_name = arguments.get(0).cloned();
     let mut Stdout_stream = Output::Stdout;
@@ -354,10 +415,10 @@ fn command_parse(command_input: &str) -> Result<i32, String> {
     Ok(0)
 }
 
+//SHELL BUILTINS
 fn exit_program(_arg_array: Vec::<String>, mut _output_stream: out_stream) -> Result<i32, String> {
     Ok(-1)
 }
-
 fn echo(arg_array: Vec::<String>, mut output_stream: out_stream) -> Result<i32, String> {
     for i in 1..arg_array.len() {
         if i > 1 {print!(" ");}
@@ -366,7 +427,6 @@ fn echo(arg_array: Vec::<String>, mut output_stream: out_stream) -> Result<i32, 
     write!(output_stream.stdout, "\n");
     Ok(0)
 }
-
 fn path_finder(executable_name: &str) -> Result<String, bool> {
     let val = match env::var("PATH") {
         Ok(path_dir) => path_dir,
@@ -397,12 +457,10 @@ fn path_finder(executable_name: &str) -> Result<String, bool> {
     }
     return Err(false)
 }
-
 fn print_working_dir(_arg_array: Vec::<String>, mut output_stream: out_stream) -> Result<i32, String> {
     writeln!(output_stream.stdout, "{}", env::current_dir().unwrap().display());
     Ok(1)
 }
-
 fn change_working_directory(arg_array: Vec::<String>, mut output_stream: out_stream) -> Result<i32, String> {
     let mut newdir = match arg_array.get(1) {
         Some(dir) => dir.clone(),
@@ -417,7 +475,6 @@ fn change_working_directory(arg_array: Vec::<String>, mut output_stream: out_str
     }
 
 }
-
 fn type_function(arg_array: Vec::<String>, mut output_stream: out_stream) -> Result<i32, String> {
     for i in 1..arg_array.len() {
         let command_to_search = arg_array.get(i);
