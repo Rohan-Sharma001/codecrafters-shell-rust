@@ -18,7 +18,7 @@ fn match_command(cmd_buffer: &mut String, multi_output: &mut bool, replace_cmd: 
     }
     else if matches.len() == 1 {
         *cmd_buffer = matches.iter().next().unwrap().clone();
-        cmd_buffer.push(' ');
+        // cmd_buffer.push(' ');
     } 
     else if *multi_output {
         print!("\n");
@@ -29,13 +29,14 @@ fn match_command(cmd_buffer: &mut String, multi_output: &mut bool, replace_cmd: 
         *multi_output = false;
     }
     else {
+        print!("\x07");
+        *multi_output = true;
         match longest_common_prefix(matches) {
             Some(word) => {*cmd_buffer = word;return;}
             None => {}
         }
         // cmd_buffer.push('\x07');
-        print!("\x07");
-        *multi_output = true;
+        
     }
 
 }
@@ -58,7 +59,12 @@ fn file_matches(token: &str) -> BTreeSet<String> { //Find matching files
                     ..0 => "",
                     _ => &token[0..(last_slash)as usize+1]
                 };
-                if (ent.file_name().to_string_lossy().starts_with(to_autocomplete)) {VecSt.insert(format!{"{}{}", fpart, ent.file_name().display()});}
+                if (ent.file_name().to_string_lossy().starts_with(to_autocomplete)) {
+                    // VecSt.insert(format!{"{}{}", fpart, ent.file_name().display()});
+                    // VecSt.insert(format!("{:?}", ent.path()));
+                    if (ent.path().is_dir()) {VecSt.insert(format!{"{}{}/", fpart, ent.file_name().display()});}
+                    else {VecSt.insert(format!{"{}{} ", fpart, ent.file_name().display()});}
+                }
             } else {
                 break;
             }
@@ -73,12 +79,18 @@ fn longest_common_prefix(matches: BTreeSet<String>) -> Option<String> {
         io::stdout().flush();
         return None;
     }
-    let ptr = matches.iter().next();
-    let fword = ptr.unwrap().clone();
-    for cmds in matches {
-        if !cmds.starts_with(&fword) {return None;}
+    let ptr = matches.first().unwrap();
+    for i in 0..ptr.len() {
+        let mut flag_ = true;
+        for m_ in matches.iter() {
+            if i > m_.len()-1 || ptr.as_bytes()[i] != m_.as_bytes()[i] {flag_ = false;}
+        }
+        if flag_ == false {
+            if i == 0 {return None;}
+            else {return Some(ptr[0..i].to_string());}
+        }
     }
-    return Some(fword);
+    return Some(ptr.to_string());
 }
 fn current_token_bounds(command: &mut String, cursor_pos: &mut usize) -> (usize,usize, usize) { //Find beginning and ends of current token
     let mut token_begin = 0;
@@ -115,9 +127,9 @@ fn current_token_bounds(command: &mut String, cursor_pos: &mut usize) -> (usize,
         if j >= *cursor_pos {token_end = j; break;}
         i = j + 1;
         if (i < command.len() && command.as_bytes()[i] as char != ' ') {token_index+=1;}
+        if j == command.len()-1 && command.as_bytes()[j] as char == ' ' {token_index+=1;}
 
     }
-
     return (token_begin, token_end, token_index)
 }
 pub fn to_replace(cmd_buffer: &mut String, cursor_pos: &mut usize, multi_output: &mut bool) { //Identify what to replace
@@ -133,7 +145,7 @@ fn command_matches(prefix: &str) -> BTreeSet<String> { //Find matching commands
     let mut VecSt = BTreeSet::<String>::new();
     for cmd in inbuilt_commands.keys() {
         if cmd.starts_with(prefix) {
-            VecSt.insert(cmd.to_string());
+            VecSt.insert(format!("{} ", cmd.to_string()));
         }
     }
     let path_dir_list = match env::var("PATH") {
@@ -151,7 +163,7 @@ fn command_matches(prefix: &str) -> BTreeSet<String> { //Find matching commands
                                 if let Ok(valid_entry) = entry {
                                     let fname = valid_entry.file_name().into_string();
                                     if let Ok(fname_str) = fname && fname_str.starts_with(prefix) {
-                                        VecSt.insert(fname_str);
+                                        VecSt.insert(format!("{} ", fname_str));
                                     } 
                                 }
                             }
@@ -163,5 +175,6 @@ fn command_matches(prefix: &str) -> BTreeSet<String> { //Find matching commands
         }
         path_iterator = vector_of_paths.next();
     }
+    // print!("{:?}", VecSt);
     VecSt
 }
